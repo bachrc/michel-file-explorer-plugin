@@ -6,9 +6,8 @@ use crate::types::ValueParam::Text;
 use crate::types::{DocumentParam, Error, FieldParam, PluginConfig, PluginInfo};
 use anyhow::Result;
 use lazy_static::lazy_static;
-use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{mpsc, Arc, Mutex};
-use walkdir::WalkDir;
+use std::sync::{Arc, Mutex};
+use walkdir::{DirEntry, WalkDir};
 
 wit_bindgen::generate!({
     world: "plugin",
@@ -16,20 +15,29 @@ wit_bindgen::generate!({
 });
 
 lazy_static! {
-    static ref GLOBAL_STATE: Arc<Mutex<State>> = Arc::new(Mutex::new(init()));
+    static ref GLOBAL_STATE: Arc<Mutex<State>> = Arc::new(Mutex::new(State::new()));
 }
 
-fn init() -> State {
-    let (tx, rx): (Sender<i32>, Receiver<i32>) = mpsc::channel();
+struct State {
+    excluded_directories: Vec<String>,
+    excluded_files: Vec<String>,
+}
 
-    State {
-        pouet: 0,
-        sender: tx,
-        receiver: rx,
+impl State {
+    fn new() -> State {
+        State {
+            excluded_files: vec![],
+            excluded_directories: vec![
+                String::from("node_modules"),
+                String::from(".git"),
+                String::from("target"),
+                String::from(".idea"),
+            ],
+        }
     }
 }
 
-fn push_file_to_index(file: FileDocument) -> Result<()> {
+fn push_file_to_index(file: &FileDocument) -> Result<()> {
     michel_api::new_document_for_index(
         "files",
         DocumentParam {
@@ -50,25 +58,14 @@ fn push_file_to_index(file: FileDocument) -> Result<()> {
     Ok(())
 }
 
-struct State {
-    pouet: i32,
-    sender: Sender<i32>,
-    receiver: Receiver<i32>,
-}
-
-impl State {
-    fn increment(&mut self) {
-        self.pouet += 1;
-    }
-}
-
 struct FileExplorer;
 
 impl plugin_api::PluginApi for FileExplorer {
     fn info() -> PluginInfo {
         PluginInfo {
+            identifier: "net.cyberendroit.michel.file-explorer-plugin".to_string(),
             name: "File explorer".to_string(),
-            description: "Explore your FS".to_string(),
+            description: "Explore your FS... maybe".to_string(),
             version: "0.0.0".to_string(),
             icon: None,
             url: None,
@@ -80,10 +77,11 @@ impl plugin_api::PluginApi for FileExplorer {
 
         WalkDir::new("/home/yohann/devs")
             .into_iter()
+            .filter_entry(|e| !is_from_excluded_directories(e))
             .filter_map(Result::ok)
             .filter(|e| !e.file_type().is_dir())
             .map(FileDocument::from)
-            .for_each(|it| push_file_to_index(it).expect("push the file"));
+            .for_each(|it| push_file_to_index(&it).expect("push the file"));
 
         Ok(())
     }
@@ -113,6 +111,24 @@ impl plugin_api::PluginApi for FileExplorer {
 
         return format!("Dans le dossier il y a {} fichiers", number_of_files);
     }
+}
+
+fn is_from_excluded_directories(entry: &DirEntry) -> bool {
+    if entry.file_type().is_file() {
+        return false;
+    }
+
+    entry
+        .file_name()
+        .to_str()
+        .map(|name| {
+            GLOBAL_STATE
+                .lock()
+                .unwrap()
+                .excluded_directories
+                .contains(&String::from(name))
+        })
+        .unwrap_or(false)
 }
 
 export_michel!(FileExplorer);
