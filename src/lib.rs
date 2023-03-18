@@ -41,7 +41,7 @@ fn push_file_to_index(file: &FileDocument) -> Result<()> {
     michel_api::new_document_for_index(
         "files",
         DocumentParam {
-            identifier: &file.filename,
+            identifier: &file.id.to_string(),
             fields: &[
                 FieldParam {
                     name: "filename",
