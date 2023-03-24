@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use walkdir::{DirEntry, WalkDir};
 
 wit_bindgen::generate!({
-    world: "plugin",
+    world: "plugong",
     path: "../michel/wit"
 });
 
@@ -76,13 +76,53 @@ impl plugin_api::PluginApi for FileExplorer {
     fn index() -> Result<(), Error> {
         michel_api::init_index("files");
 
-        WalkDir::new("/home/yohann/devs")
+        let files: Vec<FileDocument> = WalkDir::new("/home/yohann/devs")
             .into_iter()
             .filter_entry(|e| !is_from_excluded_directories(e))
             .filter_map(Result::ok)
             .filter(|e| !e.file_type().is_dir())
             .map(FileDocument::from)
-            .for_each(|it| push_file_to_index(&it).expect("push the file"));
+            .collect();
+
+        let files = files
+            .iter()
+            .map(|it| {
+                (
+                    it.id.to_string(),
+                    it.filename.to_string(),
+                    it.path.to_string_lossy().to_string(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let files = files
+            .iter()
+            .map(|(id, filename, path)| {
+                (
+                    id,
+                    [
+                        FieldParam {
+                            name: "filename",
+                            value: Text(filename.as_str()),
+                        },
+                        FieldParam {
+                            name: "path",
+                            value: Text(path.as_str()),
+                        },
+                    ],
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let docs: Vec<DocumentParam<'_>> = files
+            .iter()
+            .map(|(id, fields)| DocumentParam {
+                identifier: id.as_str(),
+                fields,
+            })
+            .collect();
+
+        michel_api::new_documents_for_index("files", docs.as_ref());
 
         Ok(())
     }
@@ -96,28 +136,16 @@ impl plugin_api::PluginApi for FileExplorer {
     }
 
     fn for_input(input: String) -> Vec<Entry> {
-        let vec1 = michel_api::search_in_index("files", &input);
-        println!("LESRETOURENT : {:?}", vec1);
-        let map: Vec<Result<FileDocument>> = vec1
+        michel_api::search_in_index("files", &input)
             .into_iter()
             .map(|it| FileDocument::try_from(it))
-            .collect();
-
-        println!("CKEGRESSU: {:?}", map);
-
-        let vec = map
-            .into_iter()
             .filter_map(|it| it.ok())
             .map(|it| Entry {
                 title: it.filename,
                 description: String::from(it.path.to_string_lossy()),
                 preview: None,
             })
-            .collect();
-
-        println!("I RECEIVED THIS : {:?}", vec);
-
-        vec
+            .collect()
     }
 
     fn autocomplete(input: String) -> Option<String> {
