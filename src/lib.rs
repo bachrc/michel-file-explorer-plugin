@@ -6,6 +6,7 @@ use crate::types::ValueParam::Text;
 use crate::types::{DocumentParam, Error, FieldParam, PluginConfig, PluginInfo};
 use anyhow::Result;
 use lazy_static::lazy_static;
+use std::fs::File;
 use std::sync::{Arc, Mutex};
 use walkdir::{DirEntry, WalkDir};
 
@@ -95,7 +96,28 @@ impl plugin_api::PluginApi for FileExplorer {
     }
 
     fn for_input(input: String) -> Vec<Entry> {
-        todo!()
+        let vec1 = michel_api::search_in_index("files", &input);
+        println!("LESRETOURENT : {:?}", vec1);
+        let map: Vec<Result<FileDocument>> = vec1
+            .into_iter()
+            .map(|it| FileDocument::try_from(it))
+            .collect();
+
+        println!("CKEGRESSU: {:?}", map);
+
+        let vec = map
+            .into_iter()
+            .filter_map(|it| it.ok())
+            .map(|it| Entry {
+                title: it.filename,
+                description: String::from(it.path.to_string_lossy()),
+                preview: None,
+            })
+            .collect();
+
+        println!("I RECEIVED THIS : {:?}", vec);
+
+        vec
     }
 
     fn autocomplete(input: String) -> Option<String> {
